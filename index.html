@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Captain's Logbook</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1815" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Logbook" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,300;1,400;1,500&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=5" />
+</head>
+<body data-skin="paper">
+  <div id="app" class="app"></div>
+
+  <script>
+    // Surface fatal errors visibly — if any vendor script or boot fails,
+    // we don't want a blank page.
+    window.__bootErrors = [];
+    window.addEventListener('error', e => {
+      window.__bootErrors.push(String(e.error?.stack || e.error?.message || e.message || e));
+      paintBootError();
+    });
+    window.addEventListener('unhandledrejection', e => {
+      window.__bootErrors.push(String(e.reason?.stack || e.reason?.message || e.reason));
+      paintBootError();
+    });
+    function paintBootError() {
+      const app = document.getElementById('app');
+      if (!app) return;
+      app.innerHTML = `<div style="padding:40px; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.6; color:#1a1815; background:#f3efe6; min-height:100vh">
+        <div style="font-family:Newsreader,serif; font-style:italic; font-size:24px; margin-bottom:14px;">Couldn't start the logbook</div>
+        <div style="color:#9b3a2a; white-space:pre-wrap; margin-bottom:18px;">${(window.__bootErrors||[]).map(s => s.replace(/[<&]/g,c=>({'<':'&lt;','&':'&amp;'}[c]))).join('\\n\\n')}</div>
+        <button onclick="(async()=>{try{const dbs=await indexedDB.databases?.();if(dbs)for(const d of dbs)indexedDB.deleteDatabase(d.name);}catch{}location.reload();})()" style="padding:8px 14px; border:1px solid #1a1815; background:transparent; cursor:pointer; font:inherit">Reset & reload</button>
+      </div>`;
+    }
+    // If nothing renders within 6s, show what we know.
+    setTimeout(() => {
+      const app = document.getElementById('app');
+      if (app && !app.firstChild) {
+        window.__bootErrors.push('Boot timed out — the app did not render within 6 seconds.');
+        paintBootError();
+      }
+    }, 6000);
+  </script>
+
+  <script src="vendor/dexie.min.js?v=5"></script>
+  <script src="vendor/suncalc.js?v=5"></script>
+  <script src="airports.js?v=5"></script>
+  <script src="aircraft.js?v=5"></script>
+  <script src="night.js?v=5"></script>
+  <script src="db.js?v=5"></script>
+  <script src="app.js?v=5"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('sw.js');
+          // Force-update so old caches don't pin stale files during dev.
+          reg.update();
+          if (reg.waiting) reg.waiting.postMessage({ type:'SKIP_WAITING' });
+        } catch {}
+      });
+    }
+  </script>
+</body>
+</html>
