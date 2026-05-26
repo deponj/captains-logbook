@@ -101,6 +101,20 @@ button { cursor:pointer; }
 .hf:focus { border-bottom-color:var(--ink); }
 .hf::placeholder { color:var(--inkFaint); }
 
+/* Date field: overlay our own DD/MM/YYYY so iOS Thai locale (BE 2569) doesn't show */
+.date-wrap { position:relative; }
+.date-wrap .hf.date-native { color:transparent; caret-color:transparent; }
+.date-wrap .hf.date-native::-webkit-date-and-time-value { color:transparent; opacity:0; }
+.date-wrap .hf.date-native::-webkit-datetime-edit { color:transparent; opacity:0; }
+.date-wrap .date-show {
+  position:absolute; left:0; right:0; top:0; bottom:0;
+  display:flex; align-items:center;
+  pointer-events:none;
+  font-family:var(--mono); font-size:16px; font-weight:500; letter-spacing:0.4px;
+  color:var(--ink);
+  padding:4px 0 8px;
+}
+
 /* Hairline select */
 .hs-wrap { position:relative; }
 .hs { width:100%; appearance:none; background:transparent; border:none;

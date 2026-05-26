@@ -7,7 +7,10 @@ const SKINS = [
   { id:'ink',     name:'Ink',     sub:'Warm night',   swatch:['#13110e','#ebe3d2','#d27662'] },
 ];
 
-const ROLES = ['PIC','SIC'];
+const ROLES = [
+  { value:'PIC',     label:'PIC'      },
+  { value:'LowRank', label:'Low Rank' },
+];
 const DUTIES = ['PF','PM','Cruise'];
 
 const PERIODS = [
@@ -99,6 +102,11 @@ const fmtMin = (mins) => {
 const minsBetween = (a, b) => (a && b) ? Math.max(0, Math.round((new Date(b)-new Date(a))/60000)) : null;
 const isoUTCnow = () => new Date().toISOString();
 const hhmmZ = (iso) => iso ? new Date(iso).toISOString().slice(11,16) : null;
+function fmtDateDMY(yyyymmdd) {
+  if (!yyyymmdd || !/^\d{4}-\d{2}-\d{2}$/.test(yyyymmdd)) return '';
+  const [y,m,d] = yyyymmdd.split('-');
+  return `${d}/${m}/${y}`;
+}
 
 const escapeHTML = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
@@ -204,13 +212,28 @@ function newFlightEl() {
 
   // Header — single Registration picker; type shown as caption
   const hdr = el('div', { class:'nf-hdr' },
-    field('Date', el('input', {
-      class:'hf mono', type:'date', value: f.dateUTC,
-      oninput: e => { f.dateUTC = e.target.value; }
-    })),
+    field('Date', (() => {
+      const wrap = el('div', { class:'date-wrap' });
+      const show = el('span', { class:'date-show mono' }, fmtDateDMY(f.dateUTC));
+      const inp = el('input', {
+        class:'hf mono date-native', type:'date', value: f.dateUTC,
+        oninput: e => { f.dateUTC = e.target.value; show.textContent = fmtDateDMY(f.dateUTC); }
+      });
+      wrap.append(inp, show);
+      return wrap;
+    })()),
     field('Flight', el('input', {
       class:'hf mono', placeholder:'TG—', value: f.fltNo, list:'flt-suggest',
-      oninput: e => { f.fltNo = e.target.value.toUpperCase(); }
+      oninput: e => {
+        f.fltNo = e.target.value.toUpperCase();
+        const route = window.lookupTGRoute && window.lookupTGRoute(f.fltNo);
+        if (route) {
+          f.dep = route.dep;
+          f.dest = route.dest;
+          recomputeNight(f);
+          renderNewFlight();
+        }
+      }
     })),
     (() => {
       const wrap = el('div');
@@ -239,7 +262,7 @@ function newFlightEl() {
   const regRow = el('div', { class:'nf-rd' },
     el('div', null,
       el('div', { class:'lbl' }, 'Role'),
-      seg(ROLES.map(r => ({ value:r, label:r })), f.role, v => { f.role = v; renderNewFlight(); }),
+      seg(ROLES, f.role, v => { f.role = v; renderNewFlight(); }, { deselect:true }),
     ),
     el('div', null,
       el('div', { class:'lbl' }, 'Duty'),
@@ -331,12 +354,13 @@ function field(label, input) {
   return el('div', null, el('div', { class:'lbl' }, label), input);
 }
 
-function seg(opts, value, onChange) {
+function seg(opts, value, onChange, { deselect=false } = {}) {
   const w = el('div', { class:'seg' });
   opts.forEach(o => {
+    const isOn = o.value === value;
     const b = el('button', {
-      class: o.value === value ? 'on' : '',
-      onclick: () => onChange(o.value)
+      class: isOn ? 'on' : '',
+      onclick: () => onChange(deselect && isOn ? null : o.value)
     }, o.label);
     w.append(b);
   });
@@ -627,7 +651,7 @@ function flightRow(f) {
       el('div', { class:'v ' + (isNight?'night':'faint'), html: isNight ? (ic('moon',10)+'<span>'+fmtMin(f.nightTimeMin)+'</span>') : '—' }),
       el('div', { class:'l' }, 'Night')),
     el('div', { class:'row-badges' },
-      el('span', { class:'badge on' }, f.role || ''),
+      f.role ? el('span', { class:'badge on' }, (f.role === 'LowRank' || f.role === 'SIC') ? 'LR' : f.role) : null,
       el('span', { class:'badge' }, f.duty === 'Cruise' ? 'CR' : (f.duty || ''))),
   );
 
@@ -678,7 +702,7 @@ function computeTotals() {
   matches.forEach(f => {
     const b = minsBetween(f.offBlock, f.onBlock) || 0;
     total += b;
-    if (f.role === 'PIC') pic += b; else if (f.role === 'SIC') sic += b;
+    if (f.role === 'PIC') pic += b; else if (f.role === 'LowRank' || f.role === 'SIC') sic += b;
     if (f.duty === 'Cruise') cruise += b;
     night += (f.nightTimeMin || 0);
     if (f.duty === 'PF' && f.touchdown) landingsPF += 1;
@@ -690,7 +714,7 @@ function computeTotals() {
     cells: [
       { key:'total',  label:'Total',          value: fmtMin(total)  },
       { key:'pic',    label:'PIC',            value: fmtMin(pic)    },
-      { key:'sic',    label:'SIC',            value: fmtMin(sic)    },
+      { key:'sic',    label:'Low Rank',       value: fmtMin(sic)    },
       { key:'cruise', label:'Cruise',         value: fmtMin(cruise) },
       { key:'night',  label:'Night',          value: fmtMin(night), night:true },
       { key:'land',   label:'Landings as PF', value: String(landingsPF) },
@@ -962,7 +986,14 @@ async function clearAll() {
 }
 
 // ── load ─────────────────────────────────────────────────────────
-async function loadFlights()  { state.flights  = (await db.flights.toArray()).sort((a,b) => (a.dateUTC<b.dateUTC?1:-1)); }
+async function loadFlights()  {
+  const all = await db.flights.toArray();
+  const stale = all.filter(f => f.role === 'SIC');
+  if (stale.length) {
+    for (const f of stale) { f.role = 'LowRank'; await db.flights.put(f); }
+  }
+  state.flights = all.sort((a,b) => (a.dateUTC<b.dateUTC?1:-1));
+}
 async function loadAirports() { state.airports = await db.airports.toArray(); }
 async function loadAircraft() { state.aircraft = await db.aircraft.toArray(); }
 async function loadAll() { await Promise.all([loadFlights(), loadAirports(), loadAircraft()]); }
