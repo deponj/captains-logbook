@@ -217,7 +217,24 @@ function newFlightEl() {
       const show = el('span', { class:'date-show mono' }, fmtDateDMY(f.dateUTC));
       const inp = el('input', {
         class:'hf mono date-native', type:'date', value: f.dateUTC,
-        oninput: e => { f.dateUTC = e.target.value; show.textContent = fmtDateDMY(f.dateUTC); }
+        oninput: e => {
+          const oldDate = f.dateUTC;
+          const newDate = e.target.value;
+          f.dateUTC = newDate;
+          show.textContent = fmtDateDMY(newDate);
+          // Shift existing stamps by the same delta as the date change, so HH:MM
+          // and any overnight rollover are preserved.
+          if (oldDate && newDate && oldDate !== newDate) {
+            const deltaMs = Date.parse(newDate + 'T00:00:00Z') - Date.parse(oldDate + 'T00:00:00Z');
+            if (!isNaN(deltaMs) && deltaMs !== 0) {
+              ['offBlock','airborne','touchdown','onBlock'].forEach(k => {
+                if (f[k]) f[k] = new Date(new Date(f[k]).getTime() + deltaMs).toISOString();
+              });
+              recomputeNight(f);
+              renderNewFlight();
+            }
+          }
+        }
       });
       wrap.append(inp, show);
       return wrap;
@@ -594,6 +611,7 @@ function fillHistory(body) {
   keys.forEach(k => {
     // newest first throughout — date desc, then off-block desc within a date
     const arr = groups[k].sort((a,b) => {
+      // Newest first throughout — by date desc, then off-block desc within the same date.
       if (a.dateUTC !== b.dateUTC) return a.dateUTC < b.dateUTC ? 1 : -1;
       const ao = a.offBlock || '', bo = b.offBlock || '';
       return ao < bo ? 1 : (ao > bo ? -1 : 0);
