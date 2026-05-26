@@ -8,14 +8,16 @@ Works offline once installed.
 
 ## Features
 
-- **Live or backfill stamping** — tap a stamp at the moment, or open the picker to enter a time manually.
-- **TG flight auto-fill** — typing a TG flight number (e.g. `TG 401`) fills From/To from a built-in route map. Edit `tg-flights.js` to extend.
+- **Tap-to-stamp** — tap an empty stamp to record UTC now; tap a stamped one to edit or clear via the picker. Editing the Date shifts all four stamps by the same delta so HH:MM and overnight rollovers stay intact.
+- **TG flight auto-fill** — typing a TG flight number (e.g. `TG 401`) fills From/To from a built-in route map seeded from real flown history. Edit `tg-flights.js` to extend.
 - **Night time calc** — uses SunCalc with departure/arrival airport coordinates to estimate minutes flown after civil twilight.
 - **Role + Duty** — PIC / Low Rank (deselectable), PF / PM / Cruise.
+- **Autoland tracking** — flag a flight as autoland; Totals shows the latest autoland date and turns red after 6 months (Cat II/III currency).
 - **Totals** — career summary by period (MTD, 90d, YTD, last 12 mo, all-time) and aircraft type.
-- **History** — month-grouped, swipe-to-delete, click to edit.
+- **History** — month-grouped, swipe-to-delete, click to edit. Badges: role (PIC / LR), duty (PF / PM / CR), AL for autoland.
+- **iPad-friendly date display** — Gregorian DD/MM/YYYY overlay so Thai locale doesn't render Buddhist Era.
 - **Themes** — Paper, Airbus, Cockpit, Ink.
-- **Import / Export** — JSON for backup, CSV for airline submission.
+- **Import / Export** — JSON for backup, CSV for airline submission (includes Autoland column).
 
 ## Run locally
 

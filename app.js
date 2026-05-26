@@ -55,7 +55,6 @@ const state = {
   editingId: null,
   totals: { period:'all', acType:'all' },
   pickerOpen: null, // { key, hh, mm } when picker is showing
-  entryMode: 'live', // 'live' (stamp now) | 'backfill' (open picker on empty)
 };
 
 function blankForm() {
@@ -78,7 +77,15 @@ function blankForm() {
     remarks: '',
     nightTimeMin: 0,
     ldType: null,
+    autoland: false,
   };
+}
+
+// Autoland currency: 6 months from today.
+function autolandCutoffMs() {
+  const c = new Date();
+  c.setUTCMonth(c.getUTCMonth() - 6);
+  return c.getTime();
 }
 
 // ── helpers ───────────────────────────────────────────────────────
@@ -289,11 +296,13 @@ function newFlightEl() {
 
   const dutyRow = el('div', { class:'nf-rd' },
     el('div', null,
-      el('div', { class:'lbl' }, 'Entry Mode'),
-      seg([
-        { value:'live',     label:'Live stamp' },
-        { value:'backfill', label:'Backfill'   },
-      ], state.entryMode, v => { state.entryMode = v; renderNewFlight(); }),
+      el('div', { class:'lbl' }, 'Autoland'),
+      el('button', {
+        class: 'autoland-btn' + (f.autoland ? ' on' : ''),
+        type: 'button',
+        'aria-pressed': f.autoland ? 'true' : 'false',
+        onclick: () => { f.autoland = !f.autoland; renderNewFlight(); }
+      }, 'AUTOLAND'),
     ),
     el('div', null,
       el('div', { class:'lbl' }, 'Quick'),
@@ -401,11 +410,7 @@ function stampEl(s, i, nextIdx) {
       ? el('div', { class:'stamp-time' }, time, el('span', { class:'z' }, 'z'))
       : el('div', { class:'stamp-time empty' }, '––:––'),
     el('div', { class: 'stamp-hint' + (isNext?' next':'') },
-      time
-        ? 'tap to edit'
-        : (state.entryMode === 'backfill'
-            ? 'tap to enter'
-            : (isNext ? 'tap to stamp' : 'tap when ready')))
+      time ? 'tap to edit' : (isNext ? 'tap to stamp' : 'tap when ready'))
   );
   return btn;
 }
@@ -426,15 +431,16 @@ function defaultPickerSeed(key) {
 
 function stampTap(key) {
   const f = state.form;
-  if (!f[key] && state.entryMode === 'live') {
+  // Empty stamp → stamp UTC now. Stamped → open picker to edit / clear.
+  if (!f[key]) {
     f[key] = isoUTCnow();
     recomputeNight(f);
     renderNewFlight();
-  } else {
-    const d = defaultPickerSeed(key);
-    state.pickerOpen = { key, hh: d.getUTCHours(), mm: d.getUTCMinutes() };
-    render();
+    return;
   }
+  const d = defaultPickerSeed(key);
+  state.pickerOpen = { key, hh: d.getUTCHours(), mm: d.getUTCMinutes() };
+  render();
 }
 
 function timePickerEl() {
@@ -453,12 +459,11 @@ function timePickerEl() {
       baseDay = defaultPickerSeed(key);
     }
     let cand = new Date(Date.UTC(baseDay.getUTCFullYear(), baseDay.getUTCMonth(), baseDay.getUTCDate(), hh, mm, 0));
+    // Find the nearest *set* previous stamp; bump to next day until cand is past it.
     for (let i = idx - 1; i >= 0; i--) {
       const prev = f[STAMP_ORDER[i]] ? new Date(f[STAMP_ORDER[i]]) : null;
-      if (prev && cand < prev) {
-        // bump to next day until past previous
-        while (cand < prev) cand = new Date(cand.getTime() + 86400000);
-      }
+      if (!prev) continue;
+      while (cand < prev) cand = new Date(cand.getTime() + 86400000);
       break;
     }
     f[key] = cand.toISOString();
@@ -670,7 +675,8 @@ function flightRow(f) {
       el('div', { class:'l' }, 'Night')),
     el('div', { class:'row-badges' },
       f.role ? el('span', { class:'badge on' }, (f.role === 'LowRank' || f.role === 'SIC') ? 'LR' : f.role) : null,
-      el('span', { class:'badge' }, f.duty === 'Cruise' ? 'CR' : (f.duty || ''))),
+      el('span', { class:'badge' }, f.duty === 'Cruise' ? 'CR' : (f.duty || '')),
+      f.autoland ? el('span', { class:'badge', title:'Autoland' }, 'AL') : null),
   );
 
   // touch swipe-to-delete
@@ -715,27 +721,30 @@ function computeTotals() {
     if (fromStr && (f.dateUTC || '') < fromStr) return false;
     return true;
   });
-  let total=0, pic=0, sic=0, cruise=0, night=0, landingsPF=0;
+  let total=0, pic=0, sic=0, night=0, landingsPF=0;
   let firstDate = null, latestDate = null;
+  let lastAutoland = null;
   matches.forEach(f => {
     const b = minsBetween(f.offBlock, f.onBlock) || 0;
     total += b;
     if (f.role === 'PIC') pic += b; else if (f.role === 'LowRank' || f.role === 'SIC') sic += b;
-    if (f.duty === 'Cruise') cruise += b;
     night += (f.nightTimeMin || 0);
     if (f.duty === 'PF' && f.touchdown) landingsPF += 1;
     if (!firstDate || f.dateUTC < firstDate) firstDate = f.dateUTC;
     if (!latestDate || f.dateUTC > latestDate) latestDate = f.dateUTC;
+    if (f.autoland && f.dateUTC && (!lastAutoland || f.dateUTC > lastAutoland)) lastAutoland = f.dateUTC;
   });
+  const cutoffMs = autolandCutoffMs();
+  const autolandExpired = !lastAutoland || Date.parse(lastAutoland + 'T00:00:00Z') < cutoffMs;
   return {
     legs: matches.length, firstDate, latestDate,
     cells: [
-      { key:'total',  label:'Total',          value: fmtMin(total)  },
-      { key:'pic',    label:'PIC',            value: fmtMin(pic)    },
-      { key:'sic',    label:'Low Rank',       value: fmtMin(sic)    },
-      { key:'cruise', label:'Cruise',         value: fmtMin(cruise) },
-      { key:'night',  label:'Night',          value: fmtMin(night), night:true },
-      { key:'land',   label:'Landings as PF', value: String(landingsPF) },
+      { key:'total',    label:'Total',          value: fmtMin(total)  },
+      { key:'pic',      label:'PIC',            value: fmtMin(pic)    },
+      { key:'sic',      label:'Low Rank',       value: fmtMin(sic)    },
+      { key:'autoland', label:'Last Autoland',  value: fmtDateDMY(lastAutoland) || '—', expired: autolandExpired },
+      { key:'night',    label:'Night',          value: fmtMin(night), night:true },
+      { key:'land',     label:'Landings as PF', value: String(landingsPF) },
     ],
   };
 }
@@ -776,9 +785,12 @@ function totalsEl() {
 
   const grid = el('div', { class:'grid-totals' });
   t.cells.forEach(c => {
+    const bigCls = ['big'];
+    if (c.night) bigCls.push('night');
+    if (c.expired) bigCls.push('expired');
     grid.append(el('div', { class:'cell' },
       el('div', { class:'lbl', html: (c.night ? ic('moon',12) : '') + escapeHTML(c.label) }),
-      el('div', { class:'big ' + (c.night?'night':'') }, c.value),
+      el('div', { class: bigCls.join(' ') }, c.value),
     ));
   });
 
@@ -939,7 +951,7 @@ async function exportJSON() {
 async function exportCSV() {
   const rows = await db.flights.orderBy('dateUTC').toArray();
   const hdr = ['Date(UTC)','FltNo','AcType','Reg','DEP','DEST','Off-Block','Airborne','Touchdown','On-Block',
-               'BlockMin','FlightMin','NightMin','LDType','Role','Duty','Crew1','Crew2','Crew3','Remarks'];
+               'BlockMin','FlightMin','NightMin','LDType','Role','Duty','Autoland','Crew1','Crew2','Crew3','Remarks'];
   const esc = v => {
     if (v == null) return '';
     const s = String(v);
@@ -954,6 +966,7 @@ async function exportCSV() {
       hhmmZ(f.offBlock), hhmmZ(f.airborne), hhmmZ(f.touchdown), hhmmZ(f.onBlock),
       block ?? '', flight ?? '', f.nightTimeMin ?? 0, f.ldType ?? '',
       f.role, f.duty,
+      f.autoland ? 'Y' : '',
       (f.crew||[])[0], (f.crew||[])[1], (f.crew||[])[2],
       f.remarks,
     ].map(esc).join(','));
