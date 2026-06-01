@@ -25,7 +25,7 @@ const PERIODS = [
 const ICONS = {
   history:  '<circle cx="9" cy="9" r="6.8"/><path d="M9 5.2v3.8l2.4 2.4"/>',
   chart:    '<path d="M2 15h14"/><path d="M4.5 11.5V8"/><path d="M8 11.5V5.5"/><path d="M11.5 11.5V7"/><path d="M15 11.5V3.5"/>',
-  settings: '<circle cx="9" cy="9" r="2.2"/><path d="M9 1.5v2.2M9 14.3v2.2M15.2 9h2.2M.6 9h2.2M13.4 4.6l1.6-1.6M3 15l1.6-1.6M13.4 13.4 15 15M3 3l1.6 1.6"/>',
+  settings: '<path d="M7.4 1.8h3.2l.6 2.1 1.8 1 2.1-.6 1.6 2.8-1.5 1.5v2.1l1.5 1.5-1.6 2.8-2.1-.6-1.8 1-.6 2.1H7.4l-.6-2.1-1.8-1-2.1.6-1.6-2.8 1.5-1.5V8.6L1.3 7.1l1.6-2.8 2.1.6 1.8-1z"/><circle cx="9" cy="9.6" r="2.2"/>',
   moon:     '<path d="M14.2 10.8A5.5 5.5 0 1 1 7.2 3.8a4.6 4.6 0 0 0 7 7z"/>',
   search:   '<circle cx="8" cy="8" r="5"/><path d="M11.8 11.8 15 15"/>',
   chevron:  '<path d="M6 3l4 6-4 6"/>',
@@ -54,7 +54,7 @@ const state = {
   settingsOpen: false,
   editingId: null,
   totals: { period:'all', acType:'all' },
-  pickerOpen: null, // { key, hh, mm } when picker is showing
+  pickerOpen: null, // { key, dateUTC, hh, mm } when picker is showing
 };
 
 function blankForm() {
@@ -439,7 +439,7 @@ function stampTap(key) {
     return;
   }
   const d = defaultPickerSeed(key);
-  state.pickerOpen = { key, hh: d.getUTCHours(), mm: d.getUTCMinutes() };
+  state.pickerOpen = { key, dateUTC: d.toISOString().slice(0,10), hh: d.getUTCHours(), mm: d.getUTCMinutes() };
   render();
 }
 
@@ -448,26 +448,12 @@ function timePickerEl() {
   const f = state.form;
   const { key } = state.pickerOpen;
   const close = () => { state.pickerOpen = null; render(); };
-  const apply = () => {
-    const { hh, mm } = state.pickerOpen;
-    // Choose the smallest valid date that produces HH:MM ≥ previous stamp.
-    const idx = STAMP_ORDER.indexOf(key);
-    let baseDay;
-    if (f[key]) {
-      baseDay = new Date(f[key]);
-    } else {
-      baseDay = defaultPickerSeed(key);
-    }
-    let cand = new Date(Date.UTC(baseDay.getUTCFullYear(), baseDay.getUTCMonth(), baseDay.getUTCDate(), hh, mm, 0));
-    // Find the nearest *set* previous stamp; bump to next day until cand is past it.
-    for (let i = idx - 1; i >= 0; i--) {
-      const prev = f[STAMP_ORDER[i]] ? new Date(f[STAMP_ORDER[i]]) : null;
-      if (!prev) continue;
-      while (cand < prev) cand = new Date(cand.getTime() + 86400000);
-      break;
-    }
-    f[key] = cand.toISOString();
+  const apply = async () => {
+    const { dateUTC, hh, mm } = state.pickerOpen;
+    if (!dateUTC) { toast('Stamp date required'); return; }
+    f[key] = window.composeStampUTC(dateUTC, hh, mm);
     recomputeNight(f);
+    if (!await persistForm()) return;
     state.pickerOpen = null;
     render();
   };
@@ -480,6 +466,7 @@ function timePickerEl() {
   };
   const setNow = () => {
     const n = new Date();
+    state.pickerOpen.dateUTC = n.toISOString().slice(0,10);
     state.pickerOpen.hh = n.getUTCHours();
     state.pickerOpen.mm = n.getUTCMinutes();
     render();
@@ -499,6 +486,12 @@ function timePickerEl() {
         el('div', { class:'sup' }, 'Edit stamp · UTC'),
         el('h2', null, STAMP_LABELS[key] || key)),
       el('button', { class:'icon-btn', onclick: close, html: ic('close', 11) })),
+    el('label', { class:'picker-date' },
+      el('span', { class:'picker-lbl' }, 'Date · UTC'),
+      el('input', {
+        class:'hf mono', type:'date', value: state.pickerOpen.dateUTC,
+        oninput: e => { state.pickerOpen.dateUTC = e.target.value; }
+      })),
     el('div', { class:'picker-body' },
       el('div', { class:'picker-col' },
         el('button', { class:'picker-step', onclick: () => bump('hh', +1) }, '▲'),
@@ -541,7 +534,7 @@ function renderNewFlight() {
   if (h) h.textContent = state.form.id ? 'Editing' : (state.form.offBlock ? 'In flight' : 'Awaiting first stamp');
 }
 
-async function save(newLeg) {
+async function persistForm() {
   const f = { ...state.form };
   if (!f.fltNo || !f.dep || !f.dest) { toast('Flt, From, To required'); return; }
   const ac = state.aircraft.find(a => a.reg === f.reg);
@@ -557,7 +550,14 @@ async function save(newLeg) {
     toast('Saved');
     f.id = id;
   }
+  state.form.id = f.id;
   await loadFlights();
+  return f;
+}
+
+async function save(newLeg) {
+  const f = await persistForm();
+  if (!f) return;
   if (newLeg) {
     const carry = blankForm();
     carry.acType = f.acType; carry.reg = f.reg;

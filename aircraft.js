@@ -3,8 +3,5 @@
 window.SEED_AIRCRAFT = [
   { reg: 'HS-TEN', type: 'A330' },
   { reg: 'HS-TEP', type: 'A330' },
-  { reg: 'HS-TER', type: 'A330' },
-  { reg: 'HS-TES', type: 'A330' },
-  { reg: 'HS-TEU', type: 'A330' },
   { reg: 'HS-TEV', type: 'A330' },
 ];

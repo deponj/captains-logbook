@@ -1,13 +1,15 @@
 // Service Worker — network-first for our own app files (so updates land
 // immediately on refresh), cache-first for vendor/fonts. Bump CACHE on deploy.
-const CACHE = 'captains-logbook-v3';
+const CACHE = 'captains-logbook-v5';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './stamp-time.js',
   './db.js',
   './airports.js',
+  './fleet-policy.js',
   './aircraft.js',
   './night.js',
   './manifest.json',
