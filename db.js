@@ -51,6 +51,7 @@ window.dbInit = async function () {
   if (apCount === 0 && window.SEED_AIRPORTS) await db.airports.bulkAdd(window.SEED_AIRPORTS);
   const acCount = await db.aircraft.count();
   if (acCount === 0 && window.SEED_AIRCRAFT) await db.aircraft.bulkAdd(window.SEED_AIRCRAFT);
+  if (window.RETIRED_AIRCRAFT?.length) await db.aircraft.bulkDelete(window.RETIRED_AIRCRAFT);
   const skin = await db.settings.get('skin');
   if (!skin) await db.settings.put({ key:'skin', value:'paper' });
 };
